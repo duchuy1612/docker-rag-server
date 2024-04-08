@@ -221,9 +221,9 @@ Only need to do this once, the folder containing the storage and the index to th
 """
 
 qdrant_index = VectorStoreIndex(
-    all_nodes,
+    all_nodes[0:10],
     storage_context=qdrant_storage_context,
-    llm=hf_remote_command_r,
+    llm=mixtral_groq,
     embed_model=cohere_embed_model,
     show_progress=True,
     verbose=True,
@@ -290,9 +290,14 @@ query_engine_tool = QueryEngineTool(
     ),
 )
 
-async def code(code_prompt: str) -> str:
+# define pydantic model for auto-retrieval function
+from pydantic import BaseModel, Field
+class CodeRetrieveModel(BaseModel):
+    query: str = Field(..., description="natural language query string")
+
+def code(query: str):
     """Use code instruct model to answer code-related questions"""
-    return deepseek_coder_model.stream_complete(code_prompt)
+    return deepseek_coder_model.complete(query)
 
 code_assistant_tool = FunctionTool(
     fn=code,
@@ -302,6 +307,7 @@ code_assistant_tool = FunctionTool(
             "useful for when you want to answer queries that have"
             " codes in them"
         ),
+        fn_schema=CodeRetrieveModel,
     ),  
 )
 
@@ -323,44 +329,62 @@ agent = ReActAgent.from_tools(
 ### Feature for Version 1 end here!!!!!
 
 """## Fast API"""
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from typing import AsyncGenerator
 import asyncio
-import uvicorn
 import time
+import uvicorn
 
-app = FastAPI(__name__)
+app = FastAPI()
+os.environ["TOKENIZERS_PARALLELISM"] = "true"  # Explicitly enable parallelism
+
 app.add_middleware(
     CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-
-def query_model(user_input):
-    response = agent.stream_chat(user_input)
-    return response
 
 @app.get("/")
 async def hello_world():
-    return "<p>Hello, World!</p>"
+    return {"message": "Hello, World!"}
 
 @app.post("/chat")
-async def chat():
-    user_message = Request.json.get('content')
-    start_time = time.time()
-    chatbot_response = query_model(user_message)
-    print(time.time() - start_time, user_message)
+async def chat(request: Request)->StreamingResponse:
+    json_data = await request.json()
+    user_message = json_data.get('content')
 
     async def send_stream_data():
-        for text in chatbot_response:
-        # do something with text as they arrive.
-            yield text
-            await asyncio.sleep(1)
+        start_time = time.time()
+        chatbot_response = agent.stream_chat(user_message)
+        for response in chatbot_response.response_gen:
+            yield response
+        print(time.time() - start_time, user_message)
 
-    return app.response_class(send_stream_data())
+    return StreamingResponse(send_stream_data(), media_type="text/event-stream")
+
+@app.post("/getChatTitle")
+async def get_chat_title(request: Request):
+    json_data = await request.json()
+    user_prompt = json_data.get('content')
+
+    async def call_model():
+        summarization_prompt = f"""Summarize this query and write a suitable title from the following: "{user_prompt}"
+Only return the title in your response."""
+        response_iter = mixtral_groq.stream_complete(summarization_prompt)
+        for response in response_iter:
+            yield response.delta
+
+
+    return StreamingResponse(call_model())
 
 @app.post("/reset")
 def reset():
     agent.reset()
-    return "<p>Chat Context Resetted!</p>"
+    return {"message": "Chat Context Resetted!"}
 
-uvicorn.run(app, host="0.0.0.0", port=3001)
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=3001)

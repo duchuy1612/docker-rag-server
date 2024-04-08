@@ -1,13 +1,19 @@
 FROM python:3.9.18-bookworm
-# Set environment variables for CMake
-ENV CMAKE_ARGS="-DLLAMA_CUBLAS=ON"
-ENV FORCE_CMAKE=1
 
+ENV PYTHONPATH=/app
+
+# Working directory for application
 WORKDIR /app
+
+# Copy and install requirements
 COPY ./requirements.txt /app/requirements.txt
-RUN pip install --upgrade pip
 RUN pip install --no-cache-dir --upgrade -r /app/requirements.txt
-COPY . .
+
+# Copy application code
+COPY . /app
+
+# Expose the application port. 
 EXPOSE 3001
 
-CMD ["python3", "-m" , "./hpc_react_agent_with_vector_storage_and_function_calling_.py"]
+# Default command to run the application    
+CMD ["python3", "./hpc_react_agent_with_vector_storage_and_function_calling_.py"]
