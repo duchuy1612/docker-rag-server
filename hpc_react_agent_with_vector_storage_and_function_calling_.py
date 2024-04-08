@@ -86,7 +86,6 @@ from llama_index.embeddings.openai import OpenAIEmbedding
 callback_manager = CallbackManager([])
 
 # Using OpenAI API for embeddings/llms
-os.environ["OPENAI_API_KEY"] = "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"
 
 os.environ["MISTRAL_API_KEY"] = "eia4L9DdjWXm982FALAX1foUjfSXa60B"
 
