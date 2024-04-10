@@ -378,7 +378,6 @@ Only return the title in your response."""
         for response in response_iter:
             yield response.delta
 
-
     return StreamingResponse(call_model())
 
 @app.post("/reset")

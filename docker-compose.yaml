@@ -10,6 +10,7 @@ services:
     image: ollama/ollama:latest
     ports:
       - 11434:11434
+
   rag-hpc-server:
     restart: always 
     container_name: rag-hpc-server

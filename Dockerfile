@@ -1,19 +1,19 @@
 FROM python:3.9.18-bookworm
 
-ENV PYTHONPATH=/app
+ENV PYTHONPATH=/ai-chatbot
 
 # Working directory for application
-WORKDIR /app
+WORKDIR /ai-chatbot
 
 # Copy and install requirements
-COPY ./requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir --upgrade -r /app/requirements.txt
+COPY ./requirements.txt /ai-chatbot/requirements.txt
+RUN pip install --no-cache-dir --upgrade -r /ai-chatbot/requirements.txt
 
 # Copy application code
-COPY . /app
+COPY ./app /ai-chatbot/app
 
 # Expose the application port. 
 EXPOSE 3001
 
 # Default command to run the application    
-CMD ["python3", "./hpc_react_agent_with_vector_storage_and_function_calling_.py"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "3001"]
