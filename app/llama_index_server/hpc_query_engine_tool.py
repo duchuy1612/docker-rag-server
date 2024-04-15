@@ -50,7 +50,7 @@ def build_query_engine_tool()-> QueryEngineTool:
         vector_store_query_mode="hybrid",
         node_postprocessors=[reorder, similarity, llm_rerank, metadata_replacement],
         response_synthesizer=synth,
-        llm=HuggingFaceInferenceAPI(model_name='CohereForAI/c4ai-command-r-v01'),
+        llm=HuggingFaceInferenceAPI(model_name='CohereForAI/c4ai-command-r-plus'),
         embed_model=CohereEmbedding(
             cohere_api_key=ApiKeys().get_api_key(org_name="cohere"),
             model_name="embed-multilingual-v3.0",

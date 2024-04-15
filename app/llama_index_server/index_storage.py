@@ -5,6 +5,8 @@ from typing import Tuple
 from enum import Enum
 from llama_index.llms.huggingface import HuggingFaceInferenceAPI, HuggingFaceLLM
 from llama_index.embeddings.cohere import CohereEmbedding
+from llama_index.core.ingestion import IngestionPipeline
+from llama_index.core.node_parser import SentenceWindowNodeParser
 from llama_index.core.callbacks import CallbackManager
 from llama_index.llms.groq import Groq
 from llama_index.vector_stores.qdrant import QdrantVectorStore
@@ -98,6 +100,16 @@ class IndexStorage:
             data_util.assert_true(os.path.exists(NODES_PATH), f"parsed nodes not found: {NODES_PATH}")
             all_nodes = data_util.get_nodes()
             valid_nodes = data_util.convert_to_valid_uuid(nodes=all_nodes)
+
+            transformations = [
+                SentenceWindowNodeParser.from_defaults(
+                    window_size=3,
+                    window_metadata_key="window",
+                    original_text_metadata_key="original_text",
+                )
+            ]
+            pipeline = IngestionPipeline(transformations=transformations)
+            query_nodes = pipeline.run(nodes=valid_nodes, in_place=True, show_progress=True)
             # creates a persistant index to disk
             client = QdrantClient(path="./qdrant_hpc_data_final")
 
@@ -111,7 +123,7 @@ class IndexStorage:
             Settings.chunk_size = 512
 
             qdrant_index = VectorStoreIndex(
-                valid_nodes[0:10],
+                query_nodes,
                 storage_context=qdrant_storage_context,
                 llm=hf_remote_command_r,
                 embed_model=cohere_embed_model,

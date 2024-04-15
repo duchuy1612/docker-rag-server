@@ -44,7 +44,7 @@ async def streaming_chat(request: ChatRequest):
     conversation_id = request.conversation_id
     return StreamingResponse(
         agent_server.stream_chat(request.content, conversation_id),
-        media_type='text/plain'
+        media_type='text/event-stream'
     )
 
 # Reset the context of the chat
