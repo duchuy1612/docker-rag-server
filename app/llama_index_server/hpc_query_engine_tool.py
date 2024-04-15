@@ -5,11 +5,19 @@ from pydantic import BaseModel, Field
 from llama_index.llms.huggingface import HuggingFaceInferenceAPI, HuggingFaceLLM
 from llama_index.core.postprocessor import LongContextReorder
 from llama_index.core.postprocessor import SimilarityPostprocessor
+from llama_index.core.postprocessor import MetadataReplacementPostProcessor
+from llama_index.llms.gemini import Gemini
+from llama_index.core.postprocessor import LLMRerank
 from llama_index.llms.groq import Groq
 from llama_index.embeddings.cohere import CohereEmbedding
 from llama_index.core import PromptTemplate
 from langchain import hub
 from llama_index.core.prompts import LangchainPromptTemplate
+from google.ai.generativelanguage import (
+    GenerateAnswerRequest,
+    HarmCategory,
+    SafetySetting,
+)
 from app.llama_index_server.index_storage import IndexStorage, Models, ApiKeys
 
 DEFAULT_NAME = "hpc_query_engine"
@@ -20,8 +28,16 @@ DEFAULT_DESCRIPTION = (
 
 def build_query_engine_tool()-> QueryEngineTool:
     qdrant_index = IndexStorage().index()
+
     reorder = LongContextReorder()
     similarity = SimilarityPostprocessor(similarity_cutoff=0.5)
+    llm_rerank = LLMRerank(
+        choice_batch_size=5,
+        top_n=2,
+        llm=Groq(model=Models.GROQ_MIXTRAL, api_key=ApiKeys().get_api_key(org_name="groq")),
+    ),
+    metadata_replacement = MetadataReplacementPostProcessor(target_metadata_key="window")
+
     synth = get_response_synthesizer(
         streaming=True,
         response_mode="refine",
@@ -32,9 +48,9 @@ def build_query_engine_tool()-> QueryEngineTool:
         similarity_top_k=3,
         sparse_top_k=10,
         vector_store_query_mode="hybrid",
-        node_postprocessors=[reorder, similarity],
+        node_postprocessors=[reorder, similarity, llm_rerank, metadata_replacement],
         response_synthesizer=synth,
-        llm=HuggingFaceInferenceAPI(model_name=IndexStorage()._current_model),
+        llm=HuggingFaceInferenceAPI(model_name='CohereForAI/c4ai-command-r-v01'),
         embed_model=CohereEmbedding(
             cohere_api_key=ApiKeys().get_api_key(org_name="cohere"),
             model_name="embed-multilingual-v3.0",
