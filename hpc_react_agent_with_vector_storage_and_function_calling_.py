@@ -35,8 +35,7 @@
 # )
 
 from llama_index.llms.ollama import Ollama
-
-deepseek_coder_model = Ollama(model="deepseek-coder:6.7b", request_timeout=60.0)
+deepseek_coder_model = Ollama(base_url="http://ollama:11434", model="deepseek-coder:6.7b", request_timeout=150.0)
 # import os
 
 # os.environ["HF_HOME"] = "model/"
@@ -94,7 +93,7 @@ os.environ["MISTRAL_API_KEY"] = "eia4L9DdjWXm982FALAX1foUjfSXa60B"
 #bge_embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-large-en-v1.5", max_length=1024)
 gemini_embed_model = GeminiEmbedding(model_name="models/embedding-001",api_key='AIzaSyAXL2kgiPDo7o63rBrogERv0hJUVGKagj4')
 cohere_embed_model = CohereEmbedding(
-    cohere_api_key='ydbWRav6garWLCLoXg5fUrXUCdBWjHGHkrOVDn1N',
+    cohere_api_key='eCI1CWbErf56zI0hPZOVeey1wrUORKLKvRAJ2KuC',
     model_name="embed-multilingual-v3.0",
     input_type="search_document",
     embedding_type="float",
@@ -110,7 +109,7 @@ hf_remote_zephyr = HuggingFaceInferenceAPI(model_name='HuggingFaceH4/zephyr-7b-b
 hf_remote_mixtral = HuggingFaceInferenceAPI(model_name='mistralai/Mixtral-8x7B-Instruct-v0.1', context_window=4096)
 hf_remote_mpt = HuggingFaceInferenceAPI(model_name='mosaicml/mpt-7b')
 hf_remote_llama2_7b = HuggingFaceInferenceAPI(model_name='meta-llama/Llama-2-7b-hf')
-hf_remote_command_r = HuggingFaceInferenceAPI(model_name='CohereForAI/c4ai-command-r-v01')
+hf_remote_command_r = HuggingFaceInferenceAPI(model_name='CohereForAI/c4ai-command-r-plus')
 hf_remote_nous_mixtral = HuggingFaceInferenceAPI(model_name='NousResearch/Nous-Hermes-2-Mixtral-8x7B-DPO')
 
 #OpenAI models
@@ -213,6 +212,18 @@ for node in all_nodes:
     except ValueError:
       node.id_ = str(uuid.uuid4())
 
+from llama_index.core.node_parser import SentenceWindowNodeParser
+from llama_index.core.ingestion import IngestionPipeline
+
+transformations = [
+    SentenceWindowNodeParser.from_defaults(
+        window_size=3,
+        window_metadata_key="window",
+        original_text_metadata_key="original_text",
+    ),
+]
+pipeline = IngestionPipeline(transformations=transformations)
+query_nodes = pipeline.run(nodes=all_nodes, in_place=True, show_progress=True)
 """## Creating Indexes for querying
 
 ### Qdrant Vector Store Index
@@ -221,7 +232,7 @@ Only need to do this once, the folder containing the storage and the index to th
 """
 
 qdrant_index = VectorStoreIndex(
-    all_nodes[0:10],
+    query_nodes[0:10],
     storage_context=qdrant_storage_context,
     llm=mixtral_groq,
     embed_model=cohere_embed_model,
@@ -251,11 +262,21 @@ from llama_index.core.postprocessor import SimilarityPostprocessor
 
 similarity = SimilarityPostprocessor(similarity_cutoff=0.5)
 
+from llama_index.core.postprocessor import MetadataReplacementPostProcessor
+from llama_index.core.postprocessor import LLMRerank
+
+llm_rerank = LLMRerank(
+    choice_batch_size=3,
+    top_n=2,
+    llm=gemini_llm,
+)
+metadata_replacement = MetadataReplacementPostProcessor(target_metadata_key="window")
+
 qdrant_query_engine = qdrant_index.as_query_engine(
     similarity_top_k=3,
     sparse_top_k=10,
     vector_store_query_mode="hybrid",
-    node_postprocessors=[reorder, similarity],
+    node_postprocessors=[reorder, similarity, metadata_replacement],
     response_synthesizer=synth,
     llm=hf_remote_command_r,
     embed_model=cohere_embed_model,
@@ -313,23 +334,53 @@ code_assistant_tool = FunctionTool(
 
 from llama_index.core.agent import ReActAgent
 
-context = """\
+IRRELEVANT_QUESTION = {
+    "default_answer_id": "irrelevant_question",
+    "default_answer": "This question is not relevant to HPC Lab, Ho Chi Minh University of Technology or coding problems so I don't have information on them, please ask a question related to HPC Lab, HPC, Ho Chi Minh University of Technology or code-related questions.",
+}
+
+def get_default_answer_id():
+    return IRRELEVANT_QUESTION["default_answer_id"]
+
+def get_default_answer():
+    return IRRELEVANT_QUESTION["default_answer"]
+
+CONTEXT = """\
 You are a hpc helpful assistant who is an expert on Ho Chi Minh University of Technology's HPC Lab's information.\
     You will answer questions about HPC Lab as in the persona of a friendly assistant \
     and a top hpc expert. \
     If there is a code block or multiple code blocks in the question, extract the code block and pass to the 'code_assistant_tool'
 """
+PROMPT_TEMPLATE_FOR_QUERY_ENGINE = (
+    "Assume you are the administrator of HPC Lab system glad to answer questions from HPC Lab's users, "
+    "if the question has anything to do with HPC Lab, or the Supernode-XP system, or HPC knowledge, or Ho Chi Minh University of Technology, or coding problems "
+    "please give detailed, simple, accurate, precise answer to the question, "
+    "limited to 1000 words maximum. If the question has nothing to do with HPC Lab, HPC, Ho Chi Minh University of Technology or coding problems at all, please answer "
+    f"'{get_default_answer_id()}'.\n"
+    "The question is: {query_str}\n"
+)
+SYSTEM_PROMPT_TEMPLATE_FOR_CHAT_ENGINE = (
+    "You are an expert assistant that can find relevant information using the tools at your disposal, and you have "
+    "great knowledge about HPC Lab, HPC, Ho Chi Minh University of Technology and coding.\n"
+    "Please give detailed, simple, accurate, precise answer to the question, limited to 1000 words maximum.\n"
+    "Remove the prefixes 'Thought: ', 'Observation: ' or 'Answer: ' if they exist in your answer. \n"
+    "You may need to combine the chat history to fully understand the query of the user.\n"
+    "If there are code blocks in your response from the 'coding\_query\_engine' tool, return it as well.\n"
+)
+vistral_llm = Ollama(base_url="http://ollama:11434", model="ontocord/vistral", request_timeout=6000.0)
+
 agent = ReActAgent.from_tools(
     tools=[query_engine_tool, code_assistant_tool],
     llm=mixtral_groq,
     verbose=True,
-    context=context
+    context=CONTEXT,
+    system_prompt=SYSTEM_PROMPT_TEMPLATE_FOR_CHAT_ENGINE,
 )
 
 ### Feature for Version 1 end here!!!!!
 
 """## Fast API"""
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, APIRouter
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from typing import AsyncGenerator
@@ -337,8 +388,59 @@ import asyncio
 import time
 import uvicorn
 
-app = FastAPI()
+router = APIRouter(prefix="/api/v1")
+
 os.environ["TOKENIZERS_PARALLELISM"] = "true"  # Explicitly enable parallelism
+
+@router.get("/")
+async def hello_world():
+    return {"message": "Hello, World!"}
+
+@router.post("/chat")
+async def chat(request: Request):
+    json_data = await request.json()
+    user_message = json_data.get('content')
+    start_time = time.time()
+    chatbot_response = agent.chat(user_message)
+    print(chatbot_response)
+    return {
+        "response": chatbot_response,
+        "time": time.time() - start_time
+    }
+
+@router.post("/chat-streaming")
+async def chat(request: Request)->StreamingResponse:
+    json_data = await request.json()
+    user_message = json_data.get('content')
+
+    async def send_stream_data():
+        start_time = time.time()
+        chatbot_response = await agent.astream_chat(user_message)
+        async for token in chatbot_response.async_response_gen():
+            yield token
+        print(time.time() - start_time, user_message)
+
+    return StreamingResponse(send_stream_data(), media_type="text/plain")
+
+@router.post("/getChatTitle")
+async def get_chat_title(request: Request):
+    json_data = await request.json()
+    user_prompt = json_data.get('content')
+    summarization_prompt = f"""Summarize this query and write a suitable title from the following: "{user_prompt}"
+Only return the title in your response."""
+    response = mixtral_groq.complete(summarization_prompt)
+
+    return {
+        "message": "Title Generated Successfully!",
+        "title": response
+    }
+
+@router.post("/reset")
+def reset():
+    agent.reset()
+    return {"message": "Chat Context Resetted!"}
+
+app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
@@ -348,42 +450,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/")
-async def hello_world():
-    return {"message": "Hello, World!"}
-
-@app.post("/chat")
-async def chat(request: Request)->StreamingResponse:
-    json_data = await request.json()
-    user_message = json_data.get('content')
-
-    async def send_stream_data():
-        start_time = time.time()
-        chatbot_response = agent.stream_chat(user_message)
-        for response in chatbot_response.response_gen:
-            yield response
-        print(time.time() - start_time, user_message)
-
-    return StreamingResponse(send_stream_data(), media_type="text/event-stream")
-
-@app.post("/getChatTitle")
-async def get_chat_title(request: Request):
-    json_data = await request.json()
-    user_prompt = json_data.get('content')
-
-    async def call_model():
-        summarization_prompt = f"""Summarize this query and write a suitable title from the following: "{user_prompt}"
-Only return the title in your response."""
-        response_iter = mixtral_groq.stream_complete(summarization_prompt)
-        for response in response_iter:
-            yield response.delta
-
-    return StreamingResponse(call_model())
-
-@app.post("/reset")
-def reset():
-    agent.reset()
-    return {"message": "Chat Context Resetted!"}
+app.include_router(router)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=3001)
