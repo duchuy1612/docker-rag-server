@@ -2,6 +2,7 @@ version: "1"
 services:
   ollama:
     volumes:
+      - .:/app
       - ./ollama/ollama:/root/.ollama
     container_name: ollama
     pull_policy: always
@@ -10,12 +11,23 @@ services:
     image: ollama/ollama:latest
     ports:
       - 11434:11434
-
+    networks:
+      - ollama-docker
   rag-hpc-server:
     restart: always 
     container_name: rag-hpc-server
+    volumes:
+      - .:/app
     image: rag-hpc-server
     ports:
       - 5001:3001
     build:
-      context: . 
+      context: .
+    networks:
+      - ollama-docker
+    depends_on:
+      - ollama
+
+networks:
+  ollama-docker:
+    driver: bridge
