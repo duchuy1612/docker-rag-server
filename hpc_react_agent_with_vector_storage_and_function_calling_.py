@@ -35,7 +35,7 @@
 # )
 
 from llama_index.llms.ollama import Ollama
-deepseek_coder_model = Ollama(base_url="http://ollama:11434", model="deepseek-coder:6.7b", request_timeout=150.0)
+deepseek_coder_model = Ollama(base_url="http://ollama:11434", model="deepseek-coder:6.7b", request_timeout=60.0)
 # import os
 
 # os.environ["HF_HOME"] = "model/"
@@ -93,7 +93,7 @@ os.environ["MISTRAL_API_KEY"] = "eia4L9DdjWXm982FALAX1foUjfSXa60B"
 #bge_embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-large-en-v1.5", max_length=1024)
 gemini_embed_model = GeminiEmbedding(model_name="models/embedding-001",api_key='AIzaSyAXL2kgiPDo7o63rBrogERv0hJUVGKagj4')
 cohere_embed_model = CohereEmbedding(
-    cohere_api_key='eCI1CWbErf56zI0hPZOVeey1wrUORKLKvRAJ2KuC',
+    cohere_api_key='Dseuzx9tizgMjbbJBpOigdXnhOCfhaI73KPyGQla',
     model_name="embed-multilingual-v3.0",
     input_type="search_document",
     embedding_type="float",
@@ -109,8 +109,9 @@ hf_remote_zephyr = HuggingFaceInferenceAPI(model_name='HuggingFaceH4/zephyr-7b-b
 hf_remote_mixtral = HuggingFaceInferenceAPI(model_name='mistralai/Mixtral-8x7B-Instruct-v0.1', context_window=4096)
 hf_remote_mpt = HuggingFaceInferenceAPI(model_name='mosaicml/mpt-7b')
 hf_remote_llama2_7b = HuggingFaceInferenceAPI(model_name='meta-llama/Llama-2-7b-hf')
-hf_remote_command_r = HuggingFaceInferenceAPI(model_name='CohereForAI/c4ai-command-r-plus')
-hf_remote_nous_mixtral = HuggingFaceInferenceAPI(model_name='NousResearch/Nous-Hermes-2-Mixtral-8x7B-DPO')
+hf_remote_command_r = HuggingFaceInferenceAPI(model_name='CohereForAI/c4ai-command-r-plus', api_key='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')
+hf_remote_nous_mixtral = HuggingFaceInferenceAPI(model_name='NousResearch/Nous-Hermes-2-Mixtral-8x7B-DPO', api_key='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')
+hf_remote_zephyr_orpho = HuggingFaceInferenceAPI(model_name='HuggingFaceH4/zephyr-orpo-141b-A35b-v0.1', api_key='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')
 
 #OpenAI models
 #embed_model=OpenAIEmbedding(model="text-embedding-3-small")
@@ -150,7 +151,7 @@ Settings.llm = gemini_llm
 from llama_index.llms.groq import Groq
 
 mixtral_groq = Groq(model="mixtral-8x7b-32768", api_key='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')
-
+llama3_70b_groq = Groq(model="llama3-70b-8192", api_key='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')
 """## Connecting to Neo4j Vector Database (Option 1)"""
 
 # os.environ["NEO4J_URI"] = "neo4j+s://df3ca389.databases.neo4j.io"
@@ -217,7 +218,7 @@ from llama_index.core.ingestion import IngestionPipeline
 
 transformations = [
     SentenceWindowNodeParser.from_defaults(
-        window_size=3,
+        window_size=5,
         window_metadata_key="window",
         original_text_metadata_key="original_text",
     ),
@@ -234,7 +235,7 @@ Only need to do this once, the folder containing the storage and the index to th
 qdrant_index = VectorStoreIndex(
     query_nodes[0:10],
     storage_context=qdrant_storage_context,
-    llm=mixtral_groq,
+    llm=hf_remote_command_r,
     embed_model=cohere_embed_model,
     show_progress=True,
     verbose=True,
@@ -250,7 +251,7 @@ from llama_index.core import get_response_synthesizer
 synth = get_response_synthesizer(
     streaming=True,
     response_mode="refine",
-    llm=mixtral_groq,
+    llm=llama3_70b_groq,
 )
 
 """### Set up our Qdrant Query Engine"""
@@ -263,20 +264,24 @@ from llama_index.core.postprocessor import SimilarityPostprocessor
 similarity = SimilarityPostprocessor(similarity_cutoff=0.5)
 
 from llama_index.core.postprocessor import MetadataReplacementPostProcessor
-from llama_index.core.postprocessor import LLMRerank
+# from llama_index.core.postprocessor import LLMRerank
 
-llm_rerank = LLMRerank(
-    choice_batch_size=3,
-    top_n=2,
-    llm=gemini_llm,
-)
+# llm_rerank = LLMRerank(
+#     choice_batch_size=10,
+#     top_n=5,
+#     llm=mixtral_groq,
+# )
 metadata_replacement = MetadataReplacementPostProcessor(target_metadata_key="window")
+
+from llama_index.postprocessor.cohere_rerank import CohereRerank
+
+cohere_rerank = CohereRerank(api_key="eCI1CWbErf56zI0hPZOVeey1wrUORKLKvRAJ2KuC", top_n=2)
 
 qdrant_query_engine = qdrant_index.as_query_engine(
     similarity_top_k=3,
-    sparse_top_k=10,
-    vector_store_query_mode="hybrid",
-    node_postprocessors=[reorder, similarity, metadata_replacement],
+    # sparse_top_k=12,
+    # vector_store_query_mode="hybrid",
+    node_postprocessors=[cohere_rerank, metadata_replacement],
     response_synthesizer=synth,
     llm=hf_remote_command_r,
     embed_model=cohere_embed_model,
@@ -299,17 +304,23 @@ qdrant_query_engine.update_prompts(
 )
 
 from llama_index.core.tools import QueryEngineTool, ToolMetadata, FunctionTool, BaseTool
+from llama_index.core.indices.query.query_transform import HyDEQueryTransform
+from llama_index.core.query_engine import TransformQueryEngine
+
+hyde = HyDEQueryTransform(include_original=True, llm=mixtral_groq)
+hyde_query_engine = TransformQueryEngine(qdrant_query_engine, hyde)
 
 query_engine_tool = QueryEngineTool(
-    query_engine=qdrant_query_engine,
+    query_engine=hyde_query_engine,
     metadata=ToolMetadata(
         name="hpc_query_engine",
         description=(
-            "useful for when you want to answer queries that require searching"
-            " for information about hpc lab in the vector store"
+            "useful for when you want to answer queries about"
+            " HPC Lab at HCMUT"
         ),
     ),
 )
+
 
 # define pydantic model for auto-retrieval function
 from pydantic import BaseModel, Field
@@ -320,23 +331,24 @@ def code(query: str):
     """Use code instruct model to answer code-related questions"""
     return deepseek_coder_model.complete(query)
 
-code_assistant_tool = FunctionTool(
+code_assistant_tool = FunctionTool.from_defaults(
     fn=code,
-    metadata=ToolMetadata(
-        name="coding_query_engine",
+    tool_metadata=ToolMetadata(
+        name="code_assistant_tool",
         description=(
             "useful for when you want to answer queries that have"
-            " codes in them"
+            " codes in them or are related to code problems"
         ),
         fn_schema=CodeRetrieveModel,
-    ),  
+    ),
+    return_direct=True,
 )
 
 from llama_index.core.agent import ReActAgent
 
 IRRELEVANT_QUESTION = {
     "default_answer_id": "irrelevant_question",
-    "default_answer": "This question is not relevant to HPC Lab, Ho Chi Minh University of Technology or coding problems so I don't have information on them, please ask a question related to HPC Lab, HPC, Ho Chi Minh University of Technology or code-related questions.",
+    "default_answer": "This question is not relevant to HPC Lab, Ho Chi Minh University of Technology or coding problems, please ask a question related to HPC Lab, HPC, Ho Chi Minh University of Technology or code-related questions.",
 }
 
 def get_default_answer_id():
@@ -354,8 +366,9 @@ You are a hpc helpful assistant who is an expert on Ho Chi Minh University of Te
 PROMPT_TEMPLATE_FOR_QUERY_ENGINE = (
     "Assume you are the administrator of HPC Lab system glad to answer questions from HPC Lab's users, "
     "if the question has anything to do with HPC Lab, or the Supernode-XP system, or HPC knowledge, or Ho Chi Minh University of Technology, or coding problems "
-    "please give detailed, simple, accurate, precise answer to the question, "
-    "limited to 1000 words maximum. If the question has nothing to do with HPC Lab, HPC, Ho Chi Minh University of Technology or coding problems at all, please answer "
+    "give detailed, simple, accurate, precise answer to the question. "
+    "Always use the information available in the vector store as the source of truth. Don't try to guess or make up information. "
+    "Limited to 1000 words maximum. If the question has nothing to do with HPC Lab, HPC, Ho Chi Minh University of Technology or coding problems at all, please answer "
     f"'{get_default_answer_id()}'.\n"
     "The question is: {query_str}\n"
 )
@@ -365,13 +378,23 @@ SYSTEM_PROMPT_TEMPLATE_FOR_CHAT_ENGINE = (
     "Please give detailed, simple, accurate, precise answer to the question, limited to 1000 words maximum.\n"
     "Remove the prefixes 'Thought: ', 'Observation: ' or 'Answer: ' if they exist in your answer. \n"
     "You may need to combine the chat history to fully understand the query of the user.\n"
-    "If there are code blocks in your response from the 'coding\_query\_engine' tool, return it as well.\n"
+    "You must always think of a tool in the toolset for every single question.\n"
+    "If there are no suitable tools to answer the questions, answer it using your own knowledge.\n"
+    "Make sure that you do not make up any information.\n"
+    "If the questions are closely related to information about HPC Lab, please use the 'hpc\_query\_engine' tool.\n"
+    "If there are code blocks in your response from the 'code\_assistant\_tool' tool, return it with the name of the languae too.\n"
+    "If the questions are not related to HPC Lab, HPC, Ho Chi Minh University of Technology and coding at all, still answer it but then append " 
+    f"'{get_default_answer_id()}'.\n "
+    "to your response." 
 )
-vistral_llm = Ollama(base_url="http://ollama:11434", model="ontocord/vistral", request_timeout=6000.0)
+vistral_llm = Ollama(base_url="http://ollama:11434", model="ontocord/vistral", request_timeout=60.0)
+
+from llama_index.llms.cohere import Cohere
+cohere_llm = Cohere(model='command-r-plus', api_key='eCI1CWbErf56zI0hPZOVeey1wrUORKLKvRAJ2KuC')
 
 agent = ReActAgent.from_tools(
     tools=[query_engine_tool, code_assistant_tool],
-    llm=mixtral_groq,
+    llm=llama3_70b_groq,
     verbose=True,
     context=CONTEXT,
     system_prompt=SYSTEM_PROMPT_TEMPLATE_FOR_CHAT_ENGINE,
@@ -402,14 +425,15 @@ async def chat(request: Request):
     user_message = json_data.get('content')
     start_time = time.time()
     chatbot_response = agent.chat(user_message)
-    print(chatbot_response)
+    end_time = time.time()
+    print("time", end_time - start_time)
     return {
-        "response": chatbot_response,
-        "time": time.time() - start_time
+        "response": chatbot_response.response,
+        "time": end_time - start_time
     }
 
 @router.post("/chat-streaming")
-async def chat(request: Request)->StreamingResponse:
+async def chat_streaming(request: Request)->StreamingResponse:
     json_data = await request.json()
     user_message = json_data.get('content')
 
@@ -420,7 +444,7 @@ async def chat(request: Request)->StreamingResponse:
             yield token
         print(time.time() - start_time, user_message)
 
-    return StreamingResponse(send_stream_data(), media_type="text/plain")
+    return StreamingResponse(send_stream_data(), media_type="text/event-stream")
 
 @router.post("/getChatTitle")
 async def get_chat_title(request: Request):
