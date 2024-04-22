@@ -1,19 +1,18 @@
 FROM python:3.9.18-bookworm
 
-ENV PYTHONPATH=/ai-chatbot
-
+ENV PYTHONPATH=/app
 # Working directory for application
-WORKDIR /ai-chatbot
+WORKDIR /app
 
 # Copy and install requirements
-COPY ./requirements.txt /ai-chatbot/requirements.txt
-RUN pip install --no-cache-dir --upgrade -r /ai-chatbot/requirements.txt
-
+COPY ./requirements.txt /app/requirements.txt
+RUN curl -fsSL https://ollama.com/install.sh | sh
+RUN pip install --no-cache-dir --upgrade -r /app/requirements.txt
 # Copy application code
-COPY ./app /ai-chatbot/app
+COPY . /app
 
-# Expose the application port. 
+# Expose the application port.
 EXPOSE 3001
 
-# Default command to run the application    
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "3001"]
+# Default command to run the application
+CMD ["python3", "./hpc_react_agent_with_vector_storage_and_function_calling_.py"]
