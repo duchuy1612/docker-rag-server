@@ -2,7 +2,6 @@ version: "1"
 services:
   ollama:
     volumes:
-      - .:/app
       - ./ollama/ollama:/root/.ollama
     container_name: ollama
     pull_policy: always
@@ -14,7 +13,7 @@ services:
     networks:
       - ollama-docker
   rag-hpc-server:
-    restart: always 
+    restart: "no"
     container_name: rag-hpc-server
     volumes:
       - .:/app

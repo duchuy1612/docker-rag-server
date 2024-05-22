@@ -11,6 +11,9 @@ RUN pip install --no-cache-dir --upgrade -r /app/requirements.txt
 # Copy application code
 COPY . /app
 
+# Build the index
+RUN python3 ./index.py
+
 # Expose the application port.
 EXPOSE 3001
 

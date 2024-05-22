@@ -150,8 +150,8 @@ Settings.llm = gemini_llm
 
 from llama_index.llms.groq import Groq
 
-mixtral_groq = Groq(model="mixtral-8x7b-32768", api_key='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')
-llama3_70b_groq = Groq(model="llama3-70b-8192", api_key='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')
+mixtral_groq = Groq(model="mixtral-8x7b-32768", api_key='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')
+llama3_70b_groq = Groq(model="llama3-70b-8192", api_key='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')
 """## Connecting to Neo4j Vector Database (Option 1)"""
 
 # os.environ["NEO4J_URI"] = "neo4j+s://df3ca389.databases.neo4j.io"
@@ -176,70 +176,15 @@ from llama_index.core import (
 # ]  # default, could be omit if create from an empty kg
 # tags = ["entity"]
 
-"""## Initializing to Qdrant Vector Database (Option 2)"""
-
-from llama_index.vector_stores.qdrant import QdrantVectorStore
-from qdrant_client import QdrantClient
-from llama_index.core import Settings
-
-# creates a persistant index to disk
-client = QdrantClient(path="./qdrant_hpc_data_final")
-
-# create our vector store with hybrid indexing enabled
-# batch_size controls how many nodes are encoded with sparse vectors at once
-qdrant_vector_store = QdrantVectorStore(
-    "hpc_paper_final", client=client, enable_hybrid=True, batch_size=20
-)
-
-qdrant_storage_context = StorageContext.from_defaults(vector_store=qdrant_vector_store)
-Settings.chunk_size = 512
-
-"""### Load the nodes containing information about HPC Lab through the report"""
-
-import pickle
-
-with open('base_nodes_parsed_json_full.pkl', 'rb') as f:
-   base_nodes_full = pickle.load(f)
-with open('objects_parsed_json_full.pkl', 'rb') as f:
-   objects_full = pickle.load(f)
-
-all_nodes = base_nodes_full + objects_full
-
-import uuid
-
-for node in all_nodes:
-    try:
-      _uuid = uuid.UUID(node.id_)
-    except ValueError:
-      node.id_ = str(uuid.uuid4())
-
-from llama_index.core.node_parser import SentenceWindowNodeParser
-from llama_index.core.ingestion import IngestionPipeline
-
-transformations = [
-    SentenceWindowNodeParser.from_defaults(
-        window_size=5,
-        window_metadata_key="window",
-        original_text_metadata_key="original_text",
-    ),
-]
-pipeline = IngestionPipeline(transformations=transformations)
-query_nodes = pipeline.run(nodes=all_nodes, in_place=True, show_progress=True)
 """## Creating Indexes for querying
 
 ### Qdrant Vector Store Index
 
 Only need to do this once, the folder containing the storage and the index to this storage will stay on our device forever and we'll retrieve the index directly from this storage
 """
+from index import load_index
 
-qdrant_index = VectorStoreIndex(
-    query_nodes[0:10],
-    storage_context=qdrant_storage_context,
-    llm=hf_remote_command_r,
-    embed_model=cohere_embed_model,
-    show_progress=True,
-    verbose=True,
-)
+qdrant_index = load_index()
 
 """## Vector Query Engine
 
